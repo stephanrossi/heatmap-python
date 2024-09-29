@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import imutils
 from scipy.ndimage.filters import gaussian_filter
-import torch
+from ultralytics import YOLO
 import time
 import os
 
@@ -16,10 +16,9 @@ def main():
         return
     print("Conexão estabelecida com sucesso.")
 
-    # Carregando o modelo
-    print("Carregando o modelo YOLOv5...")
-    model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
-    model.conf = 0.5
+    # Carregando o modelo YOLOv8
+    print("Carregando o modelo YOLOv8...")
+    model = YOLO('yolov8m.pt')  # Escolha o modelo apropriado (nano, small, medium, large)
     print("Modelo carregado com sucesso.")
 
     heatmap_accumulator = None
@@ -46,21 +45,23 @@ def main():
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
             # Inferência
-            results = model(rgb_frame)
+            results = model.predict(source=rgb_frame, imgsz=640, conf=0.5, iou=0.5)
 
-            # Extração das detecções
-            detections = results.xyxy[0]
-
+            # Inicializar o acumulador na primeira iteração
             if heatmap_accumulator is None:
                 heatmap_accumulator = np.zeros((frame.shape[0], frame.shape[1]), dtype=np.float32)
 
-            for *box, conf, cls in detections:
-                if int(cls) == 0:  # Classe 'pessoa'
-                    x1, y1, x2, y2 = map(int, box)
-                    heatmap_accumulator[y1:y2, x1:x2] += 1
+            # Processar as detecções
+            for result in results:
+                boxes = result.boxes
+                for box in boxes:
+                    cls = int(box.cls[0])
+                    if cls == 0:  # Classe 'pessoa'
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        heatmap_accumulator[y1:y2, x1:x2] += 1
 
-                    # Desenhar retângulo ao redor da pessoa
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        # Desenhar retângulo ao redor da pessoa
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
             # Aplicar filtro gaussiano para suavizar o mapa de calor
             heatmap = gaussian_filter(heatmap_accumulator, sigma=15)
